@@ -1,6 +1,8 @@
 // POST /api/paste  { title, text }  ->  { key }
 // Proxy ke Pastebin. API key ada di environment variable, bukan di frontend.
 
+import { consume, refund } from './_limit.js';
+
 const MAX_LEN = 10000;
 
 export default async function handler(req, res) {
@@ -28,6 +30,23 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: `Teks maksimal ${MAX_LEN} karakter.` });
   }
 
+  // Batas paste per perangkat per 24 jam (LIMITED_SETTING di env Vercel).
+  let quota;
+  try {
+    const c = await consume(req);
+    quota = c.quota;
+    if (!c.allowed) {
+      const wait = Math.max(1, Math.ceil(((quota.resetAt || Date.now()) - Date.now()) / 1000));
+      res.setHeader('Retry-After', String(wait));
+      return res.status(429).json({
+        error: `Kuota ${quota.limit} paste per 24 jam sudah habis.`,
+        quota
+      });
+    }
+  } catch (e) {
+    console.error(e);
+  }
+
   // Baris pertama menyimpan judul supaya bisa ditampilkan lagi saat dibaca.
   const content = `#BT:${title}\n${text}`;
 
@@ -50,11 +69,13 @@ export default async function handler(req, res) {
     const m = /^https:\/\/pastebin\.com\/([A-Za-z0-9]+)$/.exec(out);
     if (!m) {
       console.error('Pastebin error:', out);
+      await refund(req).catch(() => {});
       return res.status(502).json({ error: 'Pastebin menolak: ' + out.slice(0, 150) });
     }
-    return res.status(200).json({ key: m[1] });
+    return res.status(200).json({ key: m[1], quota });
   } catch (e) {
     console.error(e);
+    await refund(req).catch(() => {});
     return res.status(502).json({ error: 'Tidak bisa menghubungi Pastebin.' });
   }
 }
