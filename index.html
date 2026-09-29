@@ -120,6 +120,8 @@ h1 em{font-style:normal;color:var(--red-2);background:var(--red-dim);border:var(
 .btn.loading .btn-txt,.btn.loading svg{display:none}
 @keyframes spin{to{transform:rotate(360deg)}}
 .hint{margin-top:13px;font-size:11.5px;color:var(--muted-2);font-family:'JetBrains Mono',monospace;line-height:1.6}
+.quota{margin-top:12px;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--muted)}
+.quota.out{color:#c81f3a}
 .form-err{margin-top:14px;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:#c81f3a}
 
 .console{margin-top:20px;position:relative;background:var(--surface);border:var(--bw) solid var(--ink);border-radius:12px;overflow:hidden;display:none;box-shadow:var(--shadow-hard-sm)}
@@ -330,6 +332,7 @@ footer p b{color:var(--muted)}
                 <svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
             </div>
+            <div class="quota" id="quota" hidden></div>
             <div class="form-err" id="formErr" role="alert" hidden></div>
             <div class="hint">Tips: tekan Ctrl + Enter untuk membuat link lebih cepat.</div>
           </div>
@@ -633,8 +636,68 @@ function formErr(msg) {
   el.hidden = !msg; el.textContent = msg || '';
 }
 
+/* ---------- kuota harian + jam hitung mundur ---------- */
+const DKEY = 'hcpaste_dev';
+function devId() {
+  let v = '';
+  try { v = localStorage.getItem(DKEY) || ''; } catch (e) {}
+  if (!/^[A-Za-z0-9-]{16,64}$/.test(v)) {
+    v = (crypto.randomUUID ? crypto.randomUUID() : (Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2) + Date.now().toString(16)).padEnd(24, '0'));
+    v = v.replace(/[^A-Za-z0-9-]/g, '').slice(0, 64);
+    try { localStorage.setItem(DKEY, v); } catch (e) {}
+  }
+  return v;
+}
+let quota = null, clockOffset = 0, qTimer = null;
+function setQuota(q) {
+  if (!q || typeof q.limit !== 'number') return;
+  quota = q;
+  clockOffset = q.serverNow - Date.now(); // samakan jam HP dengan jam server
+  renderQuota();
+}
+function fmtLeft(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  const h = String(Math.floor(s / 3600)).padStart(2, '0');
+  const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+  const sc = String(s % 60).padStart(2, '0');
+  return h + ':' + m + ':' + sc;
+}
+function renderQuota() {
+  clearTimeout(qTimer);
+  const el = $('#quota');
+  if (!quota) { el.hidden = true; return; }
+  el.hidden = false;
+  const left = quota.resetAt ? quota.resetAt - (Date.now() + clockOffset) : 0;
+  if (quota.resetAt && left <= 0) {
+    // 24 jam selesai: ambil status baru dari server, jangan tebak sendiri
+    el.className = 'quota';
+    el.textContent = 'Menyegarkan kuota...';
+    qTimer = setTimeout(refreshQuota, 1200);
+    return;
+  }
+  const out = quota.remaining <= 0;
+  el.className = 'quota' + (out ? ' out' : '');
+  if (out) {
+    el.textContent = 'Kuota habis · bisa buat lagi dalam ' + fmtLeft(left);
+    goBtn.disabled = true;
+  } else {
+    goBtn.disabled = goBtn.classList.contains('loading');
+    el.textContent = 'Sisa kuota: ' + quota.remaining + ' / ' + quota.limit + (quota.resetAt ? ' · reset dalam ' + fmtLeft(left) : ' · per 24 jam');
+  }
+  if (quota.resetAt) qTimer = setTimeout(renderQuota, 1000);
+}
+async function refreshQuota() {
+  try {
+    const r = await fetch('/api/limit', { headers: { 'x-device-id': devId() }, cache: 'no-store' });
+    if (r.ok) setQuota(await r.json());
+  } catch (e) {}
+}
+refreshQuota();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshQuota(); });
+
 async function createLink() {
   formErr('');
+  if (quota && quota.remaining <= 0) { renderQuota(); return; }
   const text = txt.value;
   const title = ttl.value.trim();
   if (!text.trim()) { formErr('Tulis teksnya dulu sebelum membuat link.'); txt.focus(); return; }
@@ -645,10 +708,11 @@ async function createLink() {
     setStage(1);
     const res = await fetch('/api/paste', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-device-id': devId() },
       body: JSON.stringify({ title, text })
     });
     const data = await res.json().catch(() => ({}));
+    if (data.quota) setQuota(data.quota);
     if (!res.ok || !data.key) throw new Error(data.error || 'Gagal membuat link.');
     setStage(2); await wait(150);
 
@@ -669,6 +733,7 @@ async function createLink() {
     formErr(e.message || 'Gagal membuat link. Coba lagi sebentar lagi.');
   } finally {
     goBtn.disabled = false; goBtn.classList.remove('loading');
+    renderQuota();
   }
 }
 

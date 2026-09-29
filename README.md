@@ -15,6 +15,8 @@ Website berbagi teks ala Pastebin. Frontend statis + 2 serverless function (Verc
    - `PASTEBIN_KEY` = API Dev Key dari https://pastebin.com/doc_api
    - `PASTE_PRIVACY` (opsional) = `0` publik / `1` unlisted (default 1)
    - `PASTE_EXPIRE` (opsional) = `N`, `10M`, `1H`, `1D`, `1W`, `2W`, `1M`, `6M`, `1Y` (default `1W`)
+   - `LIMITED_SETTING` = batas paste per perangkat per 24 jam (default 10, ubah sesukamu)
+   - Disarankan: di Vercel, Storage/Marketplace, tambahkan **Upstash Redis** (gratis). Env `KV_REST_API_URL` dan `KV_REST_API_TOKEN` otomatis terisi. Tanpa ini limit pakai memori dan bisa reset sendiri.
 4. Redeploy supaya env var terbaca.
 
 ## Tes lokal
