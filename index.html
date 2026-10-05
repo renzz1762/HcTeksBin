@@ -342,10 +342,10 @@ footer p b{color:var(--muted)}
             <input class="field-input" id="ttl" type="text" maxlength="80" placeholder="contoh: Script Admin Panel" autocomplete="off">
 
             <label class="panel-label" for="txt">Teks · yang mau dibagikan</label>
-            <textarea class="field-area" id="txt" maxlength="10000" placeholder="Tempel atau ketik teksmu di sini..." spellcheck="false"></textarea>
+            <textarea class="field-area" id="txt" placeholder="Tempel atau ketik teksmu di sini..." spellcheck="false"></textarea>
 
             <div class="panel-foot" style="margin-top:16px">
-              <div class="counter"><span id="cnt">0</span> / 10.000 karakter</div>
+              <div class="counter"><span id="cnt">0</span> karakter</div>
               <button class="btn" id="goBtn" type="button">
                 <span class="spin"></span>
                 <span class="btn-txt">Buat link</span>
@@ -385,7 +385,7 @@ footer p b{color:var(--muted)}
             <ul class="facts">
               <li><span><b>Tanpa login</b>, langsung pakai.</span></li>
               <li><span>Disimpan di <b>Pastebin</b>, status unlisted.</span></li>
-              <li><span>Maksimal <b>10.000</b> karakter per paste.</span></li>
+              <li><span><b>Tanpa batas karakter</b> dari BagiTeks.</span></li>
             </ul>
           </div>
         </aside>
@@ -474,8 +474,8 @@ footer p b{color:var(--muted)}
             <div class="faq-a"><p>Tidak dari halaman ini. Kalau mau mengubah isi, buat link baru. Paste juga bisa kedaluwarsa otomatis sesuai pengaturan server.</p></div>
           </div>
           <div class="faq-item">
-            <button class="faq-q" type="button">Kenapa ada batas 10.000 karakter?<svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
-            <div class="faq-a"><p>Untuk menjaga server dan kuota Pastebin supaya tetap ringan dan tidak disalahgunakan.</p></div>
+            <button class="faq-q" type="button">Ada batas jumlah karakter?<svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+            <div class="faq-a"><p>BagiTeks tidak membatasi jumlah karakter. Batas teknisnya mengikuti Pastebin (kira-kira 512 KB per paste). Kalau teksmu lebih besar dari itu, pecah jadi beberapa link.</p></div>
           </div>
         </div>
       </div>
