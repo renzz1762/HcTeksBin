@@ -3,8 +3,6 @@
 
 import { consume, refund } from './_limit.js';
 
-const MAX_LEN = 10000;
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -26,9 +24,6 @@ export default async function handler(req, res) {
     : '';
 
   if (!text.trim()) return res.status(400).json({ error: 'Teks tidak boleh kosong.' });
-  if (text.length > MAX_LEN) {
-    return res.status(400).json({ error: `Teks maksimal ${MAX_LEN} karakter.` });
-  }
 
   // Batas paste per perangkat per 24 jam (LIMITED_SETTING di env Vercel).
   let quota;
