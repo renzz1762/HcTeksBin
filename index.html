@@ -162,15 +162,18 @@ h1 em{font-style:normal;color:var(--red-2);background:var(--red-dim);border:var(
 .open-link:hover{background:#fff;color:var(--ink)}
 
 .read-text{padding:20px;font-family:'Inter',sans-serif;font-size:14.5px;line-height:1.75;white-space:pre-wrap;word-break:break-word;color:var(--ink);max-height:60vh;overflow-y:auto}
-.read-text.code{background:linear-gradient(90deg,#1b1b1b 0,#1b1b1b 3.2em,#000 3.2em);color:#f2f2f2;font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.65;padding:12px 14px 12px 0;white-space:normal;counter-reset:ln;tab-size:4;-moz-tab-size:4}
+.read-text.code{background:linear-gradient(90deg,#1a1f3a 0,#1a1f3a 3.2em,#252b4d 3.2em);color:#f5f6ff;font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.65;padding:12px 14px 12px 0;white-space:normal;counter-reset:ln;tab-size:4;-moz-tab-size:4}
 .read-text.code .l{display:block;position:relative;padding-left:3.7em;white-space:pre-wrap;word-break:break-word;min-height:1.65em}
-.read-text.code .l::before{counter-increment:ln;content:counter(ln);position:absolute;left:0;width:2.6em;text-align:right;color:#8a8a8a;user-select:none;-webkit-user-select:none}
+.read-text.code .l::before{counter-increment:ln;content:counter(ln);position:absolute;left:0;width:2.6em;text-align:right;color:#8d95c4;user-select:none;-webkit-user-select:none}
 .read-text .k{color:#8d8dff}
 .read-text .s{color:#ff6b6b}
 .read-text .c{color:#4fd04f}
 .read-text .n{color:#ffc24a}
 .read-text .f{color:#4fd8ec}
 .read-text .v{color:#ffa45c}
+.top-left{display:flex;align-items:center;gap:9px;min-width:0}
+.hl-toggle:disabled{opacity:.45;cursor:default}
+@media (max-width:420px){.hl-toggle{font-size:9px;padding:4px 8px}.top-left{gap:7px}}
 .hl-toggle{font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:#fff;color:var(--ink);border:1.5px solid var(--ink);border-radius:999px;padding:4px 9px;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .hl-toggle[hidden]{display:none}
 .hl-toggle.on{background:var(--ink);color:#fff}
@@ -425,8 +428,11 @@ footer p b{color:var(--muted)}
 
       <div class="console show">
         <div class="console-top">
-          <div class="dots"><span></span><span></span><span></span></div>
-          <button type="button" class="hl-toggle on" id="hlToggle" hidden>Warna: ON</button>
+          <div class="top-left">
+            <div class="dots"><span></span><span></span><span></span></div>
+            <button type="button" class="hl-toggle on" id="hlToggle" hidden>Warna: ON</button>
+            <button type="button" class="hl-toggle" id="copyTop" disabled>Salin</button>
+          </div>
           <div class="console-status" id="readStatus"><span class="sdot"></span> Memuat</div>
         </div>
         <div class="read-text" id="readText"></div>
@@ -947,7 +953,7 @@ async function renderRead(key) {
   $('#readMeta').textContent = '';
   st.className = 'console-status';
   st.innerHTML = '<span class="sdot"></span> Memuat';
-  $('#copyText').disabled = true; $('#dlText').disabled = true;
+  $('#copyText').disabled = true; $('#copyTop').disabled = true; $('#dlText').disabled = true;
   try {
     const res = await fetch('/api/raw?key=' + encodeURIComponent(key));
     const d = await res.json().catch(() => ({}));
@@ -961,7 +967,7 @@ async function renderRead(key) {
     st.className = 'console-status ok';
     st.innerHTML = '<span class="sdot"></span> Teks dimuat';
     document.title = title + ' // HC PASTE';
-    $('#copyText').disabled = false; $('#dlText').disabled = false;
+    $('#copyText').disabled = false; $('#copyTop').disabled = false; $('#dlText').disabled = false;
   } catch (e) {
     readText = '';
     $('#hlToggle').hidden = true;
@@ -973,6 +979,7 @@ async function renderRead(key) {
   }
 }
 $('#copyText').addEventListener('click', e => copy(readText, e.currentTarget));
+$('#copyTop').addEventListener('click', e => copy(readText, e.currentTarget));
 $('#dlText').addEventListener('click', () => {
   if (!readText) return;
   const url = URL.createObjectURL(new Blob([readText], { type: 'text/plain;charset=utf-8' }));
