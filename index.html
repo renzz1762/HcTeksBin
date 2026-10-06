@@ -56,6 +56,11 @@ header{position:sticky;top:0;z-index:20;background:rgba(251,249,248,.88);backdro
 .limit-pop b{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink);display:block;margin-bottom:6px}
 .limit-pop p{font-size:11px;line-height:1.6;color:var(--muted);margin:0}
 .limit-pop .reset{margin-top:8px;font-size:11px;font-weight:700;color:var(--red)}
+.limit-pop .clock{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:10px;padding-top:10px;border-top:1.5px dashed var(--ink);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.limit-pop .clock b{display:inline;margin:0;font-size:13px;letter-spacing:.02em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.limit-pop .reset-at{margin-top:4px;font-size:10.5px;color:var(--muted)}
+.limit-pop .bar{margin-top:10px;height:8px;border:1.5px solid var(--ink);border-radius:999px;overflow:hidden;background:#fff}
+.limit-pop .bar i{display:block;height:100%;width:100%;background:var(--red);transition:width .4s ease}
 .status-pill .dot{width:6px;height:6px;border-radius:50%;background:var(--red);box-shadow:0 0 0 2px var(--red-dim)}
 
 .page{display:none;position:relative;z-index:1}
@@ -157,6 +162,18 @@ h1 em{font-style:normal;color:var(--red-2);background:var(--red-dim);border:var(
 .open-link:hover{background:#fff;color:var(--ink)}
 
 .read-text{padding:20px;font-family:'Inter',sans-serif;font-size:14.5px;line-height:1.75;white-space:pre-wrap;word-break:break-word;color:var(--ink);max-height:60vh;overflow-y:auto}
+.read-text.code{background:linear-gradient(90deg,#1b1b1b 0,#1b1b1b 3.2em,#000 3.2em);color:#f2f2f2;font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.65;padding:12px 14px 12px 0;white-space:normal;counter-reset:ln;tab-size:4;-moz-tab-size:4}
+.read-text.code .l{display:block;position:relative;padding-left:3.7em;white-space:pre-wrap;word-break:break-word;min-height:1.65em}
+.read-text.code .l::before{counter-increment:ln;content:counter(ln);position:absolute;left:0;width:2.6em;text-align:right;color:#8a8a8a;user-select:none;-webkit-user-select:none}
+.read-text .k{color:#8d8dff}
+.read-text .s{color:#ff6b6b}
+.read-text .c{color:#4fd04f}
+.read-text .n{color:#ffc24a}
+.read-text .f{color:#4fd8ec}
+.read-text .v{color:#ffa45c}
+.hl-toggle{font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:#fff;color:var(--ink);border:1.5px solid var(--ink);border-radius:999px;padding:4px 9px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.hl-toggle[hidden]{display:none}
+.hl-toggle.on{background:var(--ink);color:#fff}
 .read-actions{display:flex;gap:12px;margin-top:20px;flex-wrap:wrap}
 
 /* sidebar: kotak gaya console */
@@ -294,8 +311,11 @@ footer p b{color:var(--muted)}
         </button>
         <div class="limit-pop hidden" id="limitPop" role="dialog">
           <b>Limit paste harian</b>
-          <p id="limitPopText">Setiap perangkat dapat jatah paste per 24 jam. Jatah balik penuh otomatis setelah 24 jam dari paste pertamamu.</p>
+          <p id="limitPopText">Setiap perangkat dapat jatah paste per 24 jam. Jatah balik penuh tepat 24 jam setelah paste pertamamu. Hitungannya disimpan di server dan di browser, jadi buka-tutup website tidak me-reset limit.</p>
+          <div class="bar"><i id="limitBar"></i></div>
           <div class="reset" id="limitPopReset"></div>
+          <div class="reset-at" id="limitPopAt"></div>
+          <div class="clock"><span>Jam server</span><b id="clockNow">--:--:--</b></div>
         </div>
       </div>
     </div>
@@ -406,6 +426,7 @@ footer p b{color:var(--muted)}
       <div class="console show">
         <div class="console-top">
           <div class="dots"><span></span><span></span><span></span></div>
+          <button type="button" class="hl-toggle on" id="hlToggle" hidden>Warna: ON</button>
           <div class="console-status" id="readStatus"><span class="sdot"></span> Memuat</div>
         </div>
         <div class="read-text" id="readText"></div>
@@ -667,12 +688,34 @@ function devId() {
   }
   return v;
 }
-let quota = null, clockOffset = 0, qTimer = null;
+const QKEY = 'hcpaste_quota';
+let quota = null, clockOffset = 0, qToken = '', qBusy = false, lastTry = 0;
 const limitBadge = $('#limitBadge'), limitBadgeText = $('#limitBadgeText'), limitPop = $('#limitPop'), limitPopReset = $('#limitPopReset');
-function setQuota(q) {
+const limitPopAt = $('#limitPopAt'), limitBar = $('#limitBar'), clockNow = $('#clockNow');
+
+// Tampilkan dulu dari simpanan browser supaya limit tidak "berkedip" 10/10 saat website dibuka lagi.
+try {
+  const c = JSON.parse(localStorage.getItem(QKEY) || 'null');
+  if (c && c.q && typeof c.q.limit === 'number') { quota = c.q; clockOffset = Number(c.off) || 0; qToken = c.q.token || ''; }
+} catch (e) {}
+
+const nowSrv = () => Date.now() + clockOffset; // jam server, bukan jam HP
+const fmtClock = ms => new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZoneName: 'short' }).format(ms).replace(/\./g, ':');
+const fmtStamp = ms => new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).format(ms).replace(/(\d)\.(\d)/g, '$1:$2');
+
+function setQuota(q, t0, t1) {
   if (!q || typeof q.limit !== 'number') return;
+  // Samakan jam HP dengan jam server (dikoreksi separuh waktu perjalanan jaringan).
+  clockOffset = q.serverNow - (t0 && t1 ? (t0 + t1) / 2 : Date.now());
+  const sNow = nowSrv();
+  // Selama jendela 24 jam yang tersimpan masih berjalan, jatah tidak boleh naik. Kalau server
+  // melapor lebih longgar, itu server yang lupa (cold start), bukan jatah yang benar-benar pulih.
+  if (quota && quota.resetAt && quota.resetAt > sNow && quota.limit === q.limit && q.remaining > quota.remaining) {
+    q = Object.assign({}, q, { remaining: quota.remaining, resetAt: quota.resetAt });
+  }
   quota = q;
-  clockOffset = q.serverNow - Date.now(); // samakan jam HP dengan jam server
+  if (q.token) qToken = q.token;
+  try { localStorage.setItem(QKEY, JSON.stringify({ q: quota, off: clockOffset })); } catch (e) {}
   renderQuota();
 }
 function fmtLeft(ms) {
@@ -683,14 +726,15 @@ function fmtLeft(ms) {
   return h + ':' + m + ':' + sc;
 }
 function renderQuota() {
-  clearTimeout(qTimer);
+  const now = nowSrv();
+  clockNow.textContent = fmtClock(now);
   if (!quota) { limitBadge.hidden = true; return; }
   limitBadge.hidden = false;
-  const left = quota.resetAt ? quota.resetAt - (Date.now() + clockOffset) : 0;
+  const left = quota.resetAt ? quota.resetAt - now : 0;
   if (quota.resetAt && left <= 0) {
-    // 24 jam selesai: ambil status baru dari server, jangan tebak sendiri
+    // 24 jam selesai: minta status baru ke server, jangan tebak sendiri
     limitBadgeText.textContent = 'Menyegarkan...';
-    qTimer = setTimeout(refreshQuota, 1200);
+    if (Date.now() - lastTry > 3000) { lastTry = Date.now(); refreshQuota(); }
     return;
   }
   const out = quota.remaining <= 0;
@@ -699,17 +743,27 @@ function renderQuota() {
   goBtn.disabled = out || goBtn.classList.contains('loading');
   limitPopReset.textContent = quota.resetAt
     ? (out ? 'Bisa buat lagi dalam ' + fmtLeft(left) : 'Reset dalam ' + fmtLeft(left))
-    : '';
-  if (quota.resetAt) qTimer = setTimeout(renderQuota, 1000);
+    : 'Belum ada paste, jatah penuh.';
+  limitPopAt.textContent = quota.resetAt ? 'Reset pukul ' + fmtStamp(quota.resetAt) : '';
+  limitBar.style.width = Math.max(0, Math.min(100, quota.remaining / quota.limit * 100)) + '%';
 }
 async function refreshQuota() {
+  if (qBusy) return;
+  qBusy = true;
   try {
-    const r = await fetch('/api/limit', { headers: { 'x-device-id': devId() }, cache: 'no-store' });
-    if (r.ok) setQuota(await r.json());
-  } catch (e) {}
+    const t0 = Date.now();
+    const r = await fetch('/api/limit', { headers: { 'x-device-id': devId(), 'x-quota-token': qToken }, cache: 'no-store' });
+    const t1 = Date.now();
+    if (r.ok) setQuota(await r.json(), t0, t1);
+  } catch (e) {} finally { qBusy = false; }
 }
+renderQuota();
 refreshQuota();
+setInterval(renderQuota, 1000);                 // jam + hitung mundur jalan tiap detik
+setInterval(() => { if (!document.hidden) refreshQuota(); }, 60000); // sinkron ulang jam & kuota tiap menit
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshQuota(); });
+window.addEventListener('online', refreshQuota);
+window.addEventListener('pageshow', refreshQuota);
 limitBadge.addEventListener('click', (e) => {
   e.stopPropagation();
   const willShow = limitPop.classList.contains('hidden');
@@ -734,13 +788,15 @@ async function createLink() {
   try {
     setStage(0); await wait(150);
     setStage(1);
+    const t0 = Date.now();
     const res = await fetch('/api/paste', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-device-id': devId() },
+      headers: { 'Content-Type': 'application/json', 'x-device-id': devId(), 'x-quota-token': qToken },
       body: JSON.stringify({ title, text })
     });
+    const t1 = Date.now();
     const data = await res.json().catch(() => ({}));
-    if (data.quota) setQuota(data.quota);
+    if (data.quota) setQuota(data.quota, t0, t1);
     if (!res.ok || !data.key) throw new Error(data.error || 'Gagal membuat link.');
     setStage(2); await wait(150);
 
@@ -765,12 +821,129 @@ async function createLink() {
   }
 }
 
+/* ---------- pewarnaan kode (Lua / Luau Roblox) ---------- */
+const LUA_KW = new Set(['and','break','do','else','elseif','end','for','function','if','in','local','not','or','repeat','return','then','until','while','continue']);
+const LUA_CONST = new Set(['nil','true','false','self']);
+const RE_ID = /[A-Za-z_][A-Za-z0-9_]*/y;
+const RE_NUM = /0[xX][0-9a-fA-F_]+|0[bB][01_]+|\d[\d_]*\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?/y;
+const RE_LONG = /\[(=*)\[/y;
+const RE_LCOM = /--\[(=*)\[/y;
+function looksLikeLua(t) {
+  const x = t.slice(0, 60000);
+  let score = 0;
+  if (/^\s*local\s+(function\b|[\w{][\w,\s{}]*=)/m.test(x)) score += 2;
+  if (/\bfunction\s*[\w.:]*\s*\(/.test(x)) score += 2;
+  if (/^\s*end\b[\s,)]*$/m.test(x)) score += 2;
+  if (/\b(then|do)\s*(--.*)?$/m.test(x)) score += 1;
+  if (/^\s*--/m.test(x)) score += 1;
+  if (/\b(game|workspace)\s*[:.]\s*\w+|Instance\.new|script\.Parent|:Connect\s*\(|:GetService\s*\(/.test(x)) score += 2;
+  return score >= 3;
+}
+function highlightLua(src) {
+  const out = [];
+  const n = src.length;
+  let i = 0, funcName = false;
+  const push = (c, t) => {
+    const last = out[out.length - 1];
+    if (last && last[0] === c) last[1] += t; else out.push([c, t]);
+  };
+  while (i < n) {
+    const ch = src[i];
+    if (ch === '-' && src[i + 1] === '-') {
+      RE_LCOM.lastIndex = i;
+      const m = RE_LCOM.exec(src);
+      let j;
+      if (m) { const close = ']' + m[1] + ']'; j = src.indexOf(close, i + m[0].length); j = j < 0 ? n : j + close.length; }
+      else { j = src.indexOf('\n', i); if (j < 0) j = n; }
+      push('c', src.slice(i, j)); i = j; continue;
+    }
+    if (ch === '"' || ch === "'") {
+      let j = i + 1;
+      while (j < n) { const c = src[j]; if (c === '\\') { j += 2; continue; } if (c === ch || c === '\n') break; j++; }
+      if (src[j] === ch) j++;
+      j = Math.min(j, n);
+      push('s', src.slice(i, j)); i = j; continue;
+    }
+    if (ch === '`') {
+      let j = i + 1;
+      while (j < n && src[j] !== '`') { if (src[j] === '\\') j++; j++; }
+      j = Math.min(j + 1, n);
+      push('s', src.slice(i, j)); i = j; continue;
+    }
+    if (ch === '[') {
+      RE_LONG.lastIndex = i;
+      const m = RE_LONG.exec(src);
+      if (m) {
+        const close = ']' + m[1] + ']';
+        let j = src.indexOf(close, i + m[0].length); j = j < 0 ? n : j + close.length;
+        push('s', src.slice(i, j)); i = j; continue;
+      }
+    }
+    if ((ch >= '0' && ch <= '9') || (ch === '.' && src[i + 1] >= '0' && src[i + 1] <= '9')) {
+      RE_NUM.lastIndex = i;
+      const m = RE_NUM.exec(src);
+      if (m) { push('n', m[0]); i += m[0].length; continue; }
+    }
+    if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch === '_') {
+      RE_ID.lastIndex = i;
+      const w = RE_ID.exec(src)[0];
+      const j = i + w.length;
+      let cls = '';
+      if (LUA_KW.has(w)) { cls = 'k'; if (w === 'function') funcName = true; }
+      else if (LUA_CONST.has(w)) cls = 'v';
+      else if (!funcName) {
+        let k = j; while (src[k] === ' ' || src[k] === '\t') k++;
+        if (src[k] === '(') cls = 'f';
+      }
+      push(cls, w); i = j; continue;
+    }
+    if (ch === '(') funcName = false;
+    push('', ch); i++;
+  }
+  // pecah per baris supaya nomor baris bisa dipasang
+  const esc2 = t => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const lines = [];
+  let cur = '';
+  for (const [c, t] of out) {
+    const parts = t.split('\n');
+    parts.forEach((part, idx) => {
+      if (idx > 0) { lines.push(cur); cur = ''; }
+      if (part) cur += c ? '<span class="' + c + '">' + esc2(part) + '</span>' : esc2(part);
+    });
+  }
+  lines.push(cur);
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop(); // baris kosong terakhir dari \n penutup
+  return lines.map(l => '<span class="l">' + (l || '&#8203;') + '</span>').join('');
+}
+let hlOn = true;
+try { hlOn = localStorage.getItem('hcpaste_hl') !== '0'; } catch (e) {}
+function paintRead() {
+  const el = $('#readText'), tg = $('#hlToggle');
+  const isCode = readText.length > 0 && readText.length <= 400000 && looksLikeLua(readText);
+  tg.hidden = !isCode;
+  if (isCode && hlOn) {
+    el.className = 'read-text code';
+    el.innerHTML = highlightLua(readText);
+  } else {
+    el.className = 'read-text';
+    el.textContent = readText;
+  }
+  tg.classList.toggle('on', hlOn);
+  tg.textContent = 'Warna: ' + (hlOn ? 'ON' : 'OFF');
+}
+$('#hlToggle').addEventListener('click', () => {
+  hlOn = !hlOn;
+  try { localStorage.setItem('hcpaste_hl', hlOn ? '1' : '0'); } catch (e) {}
+  paintRead();
+});
+
 /* ---------- baca teks dari link ---------- */
 let readText = '', readName = 'paste';
 async function renderRead(key) {
   const st = $('#readStatus');
   $('#readTitle').textContent = 'Memuat...';
-  $('#readText').textContent = '';
+  $('#readText').className = 'read-text'; $('#readText').textContent = '';
+  $('#hlToggle').hidden = true;
   $('#readMeta').textContent = '';
   st.className = 'console-status';
   st.innerHTML = '<span class="sdot"></span> Memuat';
@@ -783,7 +956,7 @@ async function renderRead(key) {
     const title = d.title || 'Teks tanpa judul';
     readName = (d.title || 'paste-' + key).replace(/[^\w\-. ]+/g, '').trim().replace(/\s+/g, '-') || 'paste';
     $('#readTitle').textContent = title;
-    $('#readText').textContent = d.text;
+    paintRead();
     $('#readMeta').textContent = d.text.length.toLocaleString('id-ID') + ' karakter · ' + d.text.split('\n').length.toLocaleString('id-ID') + ' baris';
     st.className = 'console-status ok';
     st.innerHTML = '<span class="sdot"></span> Teks dimuat';
@@ -791,6 +964,8 @@ async function renderRead(key) {
     $('#copyText').disabled = false; $('#dlText').disabled = false;
   } catch (e) {
     readText = '';
+    $('#hlToggle').hidden = true;
+    $('#readText').className = 'read-text';
     $('#readTitle').textContent = 'Teks tidak ditemukan';
     $('#readText').textContent = 'Link ini salah, paste-nya sudah kedaluwarsa atau dihapus, atau server sedang sibuk. Coba lagi sebentar, atau minta pengirim membagikan link-nya lagi.';
     st.className = 'console-status err';
